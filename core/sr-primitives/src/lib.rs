@@ -611,6 +611,62 @@ macro_rules! impl_outer_config {
 	}
 }
 
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __parse_pattern_2 {
+	(Inherent $module:ident $internal:ident $v1:ident $v2:ident) => {
+		$internal::$module($module::RawLog::Inherent(ref $v1, ref $v2))
+	};
+	(Consensus $module:ident $internal:ident $v1:ident $v2:ident) => {
+		$internal::$module($module::RawLog::Consensus(ref $v1, ref $v2))
+	};
+	($name:ident $module:ident $internal:ident $v1:ident $v2:ident) => {
+		$internal::$module($module::RawLog::$name(ref $v1))
+	};
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __parse_pattern {
+	(Inherent $module:ident $internal:ident $t:ident) => {
+		$crate::generic::$t::Inherent($module, $internal)
+	};
+	(Consensus $module:ident $internal:ident $t:ident) => {
+		$crate::generic::$t::Consensus($module, $internal)
+	};
+	($name:ident $module:ident $internal:ident $t:ident) => {
+		$crate::generic::$t::$name($module)
+	};
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __parse_expr {
+	(Inherent $module:ident $internal:ident) => {
+		$internal::$module($module::RawLog::Inherent($module, $internal))
+	};
+	(Consensus $module:ident $internal:ident) => {
+		$internal::$module($module::RawLog::Consensus($module, $internal))
+	};
+	($name:ident $module:ident $internal:ident) => {
+		$internal::$module($module::RawLog::$name($module))
+	};
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __parse_expr_2 {
+	(Inherent $module:ident $internal:ident $v1:ident $v2:ident) => {
+		$crate::generic::DigestItemRef::Inherent($v1, $v2)
+	};
+	(Consensus $module:ident $internal:ident $v1:ident $v2:ident) => {
+		$crate::generic::DigestItemRef::Consensus($v1, $v2)
+	};
+	($name:ident $module:ident $internal:ident $v1:ident $v2:ident) => {
+		$crate::generic::DigestItemRef::$name($v1)
+	};
+}
+
 /// Generates enum that contains all possible log entries for the runtime.
 /// Every individual module of the runtime that is mentioned, must
 /// expose a `Log` and `RawLog` enums.
@@ -650,7 +706,7 @@ macro_rules! impl_outer_log {
 		#[allow(non_camel_case_types)]
 		pub enum InternalLog {
 			$(
-				$module($module::Log<$trait $(, $instance)? >),
+				$module($module::Log <$trait $(, $instance)?>),
 			)*
 		}
 
@@ -662,8 +718,8 @@ macro_rules! impl_outer_log {
 			fn dref<'a>(&'a self) -> Option<$crate::generic::DigestItemRef<'a, $($genarg),*>> {
 				match self.0 {
 					$($(
-					$internal::$module($module::RawLog::$sitem(ref v)) =>
-						Some($crate::generic::DigestItemRef::$sitem(v)),
+					$crate::__parse_pattern_2!($sitem $module $internal a b) =>
+						Some($crate::__parse_expr_2!($sitem $module $internal a b)),
 					)*)*
 					_ => None,
 				}
@@ -682,23 +738,24 @@ macro_rules! impl_outer_log {
 				self.dref().and_then(|dref| dref.as_changes_trie_root())
 			}
 
-			fn as_pre_runtime(&self) -> Option<($crate::ConsensusEngineId, &[u8])> {
-				self.dref().and_then(|dref| dref.as_pre_runtime())
+			fn as_inherent(&self) -> Option<($crate::ConsensusEngineId, &[u8])> {
+				self.dref().and_then(|dref| dref.as_inherent())
 			}
 		}
 
 		impl From<$crate::generic::DigestItem<$($genarg),*>> for $name {
-			/// Converts `generic::DigestItem` into `$name`. If `generic::DigestItem` represents
-			/// a system item which is supported by the runtime, it is returned.
-			/// Otherwise we expect a `Other` log item. Trying to convert from anything other
-			/// will lead to panic in runtime, since the runtime does not supports this 'system'
-			/// log item.
+			/// Converts `generic::DigestItem` into `$name`. If
+			/// `generic::DigestItem` represents a system item which is
+			/// supported by the runtime, it is returned. Otherwise we expect a
+			/// `Other`, `PreDigest`, or `Consensus` log item. Trying to convert
+			/// from anything else will lead to panic at runtime, since the
+			/// runtime does not supports this 'system' log item.
 			#[allow(unreachable_patterns)]
 			fn from(gen: $crate::generic::DigestItem<$($genarg),*>) -> Self {
 				match gen {
 					$($(
-					$crate::generic::DigestItem::$sitem(value) =>
-						$name($internal::$module($module::RawLog::$sitem(value))),
+					$crate::__parse_pattern!($sitem $module $internal DigestItem) =>
+						$name($crate::__parse_expr!($sitem $module $internal)),
 					)*)*
 					_ => gen.as_other()
 						.and_then(|value| $crate::codec::Decode::decode(&mut &value[..]))
@@ -732,16 +789,16 @@ macro_rules! impl_outer_log {
 		}
 
 		$(
-			impl From<$module::Log<$trait $(, $instance)? >> for $name {
+			impl From<$module::Log<$trait $(, $instance)?>> for $name {
 				/// Converts single module log item into `$name`.
 				fn from(x: $module::Log<$trait $(, $instance)? >) -> Self {
 					$name(x.into())
 				}
 			}
 
-			impl From<$module::Log<$trait $(, $instance)? >> for InternalLog {
+			impl From<$module::Log<$trait $(, $instance)?>> for InternalLog {
 				/// Converts single module log item into `$internal`.
-				fn from(x: $module::Log<$trait $(, $instance)? >) -> Self {
+				fn from(x: $module::Log<$trait $(, $instance)?>) -> Self {
 					InternalLog::$module(x)
 				}
 			}

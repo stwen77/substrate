@@ -82,7 +82,7 @@ pub enum DigestItem<Hash, AuthorityId, SealSignature> {
 	/// the consensus engine can (and should) read them itself to avoid
 	/// code and state duplication.  It is erroneous for a runtime to produce
 	/// these, but this is not (yet) checked.
-	PreRuntime(ConsensusEngineId, Vec<u8>),
+	Inherent(ConsensusEngineId, Vec<u8>),
 	/// Any 'non-system' digest item, opaque to the native code.
 	Other(Vec<u8>),
 }
@@ -118,7 +118,7 @@ pub enum DigestItemRef<'a, Hash: 'a, AuthorityId: 'a, SealSignature: 'a> {
 	/// the consensus engine can (and should) read them itself to avoid
 	/// code and state duplication.  It is erroneous for a runtime to produce
 	/// these, but this is not (yet) checked.
-	PreRuntime(&'a ConsensusEngineId, &'a Vec<u8>),
+	Inherent(&'a ConsensusEngineId, &'a Vec<u8>),
 	/// Any 'non-system' digest item, opaque to the native code.
 	Other(&'a Vec<u8>),
 }
@@ -135,7 +135,7 @@ enum DigestItemType {
 	ChangesTrieRoot = 2,
 	Consensus = 4,
 	Seal = 5,
-	PreRuntime = 6,
+	Inherent = 6,
 }
 
 impl<Hash, AuthorityId, SealSignature> DigestItem<Hash, AuthorityId, SealSignature> {
@@ -154,7 +154,7 @@ impl<Hash, AuthorityId, SealSignature> DigestItem<Hash, AuthorityId, SealSignatu
 			DigestItem::ChangesTrieRoot(ref v) => DigestItemRef::ChangesTrieRoot(v),
 			DigestItem::Consensus(ref v, ref s) => DigestItemRef::Consensus(v, s),
 			DigestItem::Seal(ref v, ref s) => DigestItemRef::Seal(v, s),
-			DigestItem::PreRuntime(ref v, ref s) => DigestItemRef::PreRuntime(v, s),
+			DigestItem::Inherent(ref v, ref s) => DigestItemRef::Inherent(v, s),
 			DigestItem::Other(ref v) => DigestItemRef::Other(v),
 		}
 	}
@@ -176,8 +176,8 @@ impl<
 		self.dref().as_changes_trie_root()
 	}
 
-	fn as_pre_runtime(&self) -> Option<(ConsensusEngineId, &[u8])> {
-		self.dref().as_pre_runtime()
+	fn as_inherent(&self) -> Option<(ConsensusEngineId, &[u8])> {
+		self.dref().as_inherent()
 	}
 }
 
@@ -206,9 +206,9 @@ impl<Hash: Decode, AuthorityId: Decode, SealSignature: Decode> Decode for Digest
 				let vals: (ConsensusEngineId, SealSignature) = Decode::decode(input)?;
 				Some(DigestItem::Seal(vals.0, vals.1))
 			},
-			DigestItemType::PreRuntime => {
+			DigestItemType::Inherent => {
 				let vals: (ConsensusEngineId, Vec<u8>) = Decode::decode(input)?;
-				Some(DigestItem::PreRuntime(vals.0, vals.1))
+				Some(DigestItem::Inherent(vals.0, vals.1))
 			},
 			DigestItemType::Other => Some(DigestItem::Other(
 				Decode::decode(input)?,
@@ -234,10 +234,10 @@ impl<'a, Hash: Codec + Member, AuthorityId: Codec + Member, SealSignature: Codec
 		}
 	}
 
-	/// Cast this digest item into `PreRuntime`
-	pub fn as_pre_runtime(&self) -> Option<(ConsensusEngineId, &'a [u8])> {
+	/// Cast this digest item into `Inherent`
+	pub fn as_inherent(&self) -> Option<(ConsensusEngineId, &'a [u8])> {
 		match *self {
-			DigestItemRef::PreRuntime(consensus_engine_id, ref data) => Some((*consensus_engine_id, data)),
+			DigestItemRef::Inherent(consensus_engine_id, ref data) => Some((*consensus_engine_id, data)),
 			_ => None,
 		}
 	}
@@ -264,8 +264,8 @@ impl<'a, Hash: Encode, AuthorityId: Encode, SealSignature: Encode> Encode for Di
 				DigestItemType::Seal.encode_to(&mut v);
 				(val, sig).encode_to(&mut v);
 			},
-			DigestItemRef::PreRuntime(val, data) => {
-				DigestItemType::PreRuntime.encode_to(&mut v);
+			DigestItemRef::Inherent(val, data) => {
+				DigestItemType::Inherent.encode_to(&mut v);
 				(val, data).encode_to(&mut v);
 			},
 			DigestItemRef::Other(val) => {

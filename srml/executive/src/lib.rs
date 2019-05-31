@@ -153,7 +153,7 @@ where
 	/// Start the execution of a particular block.
 	pub fn initialize_block(header: &System::Header) {
 		let mut digests = System::Digest::default();
-		header.digest().logs().iter().for_each(|d| if d.as_pre_runtime().is_some() { digests.push(d.clone()) });
+		header.digest().logs().iter().for_each(|d| if d.as_inherent().is_some() { digests.push(d.clone()) });
 		Self::initialize_block_impl(header.number(), header.parent_hash(), header.extrinsics_root(), &digests);
 	}
 

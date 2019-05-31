@@ -7,7 +7,7 @@ set -e
 PROJECT_ROOT=`git rev-parse --show-toplevel`
 source "`dirname \"$0\"`/common.sh"
 
-export CARGO_INCREMENTAL=0
+export CARGO_INCREMENTAL=0 RUSTFLAGS="-C link-arg=--export-table -Z external-macro-backtrace"
 
 # Save current directory.
 pushd .
