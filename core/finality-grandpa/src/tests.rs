@@ -1067,7 +1067,7 @@ fn allows_reimporting_change_blocks() {
 	let (block_import, ..) = net.make_block_import(client.clone());
 
 	let full_client = client.as_full().unwrap();
-	let builder = full_client.new_block_at(&BlockId::Number(0), Default::default()).unwrap();
+	let builder = full_client.new_block_at(&BlockId::Number(0)).unwrap();
 	let block = builder.bake().unwrap();
 	api.scheduled_changes.lock().insert(*block.header.parent_hash(), ScheduledChange {
 		next_authorities: make_ids(peers_b),
@@ -1116,7 +1116,7 @@ fn test_bad_justification() {
 	let (block_import, ..) = net.make_block_import(client.clone());
 
 	let full_client = client.as_full().expect("only full clients are used in test");
-	let builder = full_client.new_block_at(&BlockId::Number(0), Default::default()).unwrap();
+	let builder = full_client.new_block_at(&BlockId::Number(0)).unwrap();
 	let block = builder.bake().unwrap();
 	api.scheduled_changes.lock().insert(*block.header.parent_hash(), ScheduledChange {
 		next_authorities: make_ids(peers_b),

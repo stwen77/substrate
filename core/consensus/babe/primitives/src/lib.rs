@@ -15,7 +15,7 @@
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Primitives for BABE.
-#![deny(warnings, unsafe_code, missing_docs)]
+#![forbid(warnings, unsafe_code, missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use runtime_primitives::ConsensusEngineId;

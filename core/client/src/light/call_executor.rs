@@ -448,7 +448,7 @@ pub fn check_execution_proof<Header, E, H>(
 		Default::default(),
 		Default::default(),
 		request.header.hash(),
-		request.header.digest().clone(),
+		Default::default(),
 	);
 	execution_proof_check_on_trie_backend::<H, _>(
 		&trie_backend,
@@ -525,7 +525,7 @@ mod tests {
 		for _ in 1..3 {
 			remote_client.import_justified(
 				BlockOrigin::Own,
-				remote_client.new_block(Default::default()).unwrap().bake().unwrap(),
+				remote_client.new_block().unwrap().bake().unwrap(),
 				Default::default(),
 			).unwrap();
 		}

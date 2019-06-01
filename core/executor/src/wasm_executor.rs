@@ -507,7 +507,7 @@ impl_function_executor!(this: FunctionExecutor<'e, E>,
 				&if let Ok(_skey) = str::from_utf8(&key) {
 					*_skey
 				} else {
-					format!("{}", HexDisplay::from(&key))
+					&format!("{}", HexDisplay::from(&key))
 				},
 				HexDisplay::from(&hashed_key)
 			);
