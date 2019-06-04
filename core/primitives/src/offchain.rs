@@ -116,7 +116,7 @@ impl TryFrom<u32> for HttpRequestStatus {
 			0 => Ok(HttpRequestStatus::Unknown),
 			10 => Ok(HttpRequestStatus::DeadlineReached),
 			20 => Ok(HttpRequestStatus::Timeout),
-			100...999 => Ok(HttpRequestStatus::Finished(status as u16)),
+			100..=999 => Ok(HttpRequestStatus::Finished(status as u16)),
 			_ => Err(()),
 		}
 	}

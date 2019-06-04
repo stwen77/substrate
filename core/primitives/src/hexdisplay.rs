@@ -79,7 +79,7 @@ pub fn ascii_format(asciish: &[u8]) -> String {
 	let mut latch = false;
 	for c in asciish {
 		match (latch, *c) {
-			(false, 32...127) => r.push(*c as char),
+			(false, 32..=127) => r.push(*c as char),
 			_ => {
 				if !latch {
 					r.push('#');
