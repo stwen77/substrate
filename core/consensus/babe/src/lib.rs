@@ -77,19 +77,18 @@ use client::{
 	error::Result as CResult,
 	backend::AuxStore,
 };
-use slots::{CheckedHeader, check_equivocation};
 use futures::{Future, IntoFuture, future};
 use tokio::timer::Timeout;
 use log::{error, warn, debug, info, trace};
 
-use slots::{SlotWorker, SlotInfo, SlotCompatible, slot_now};
+use slots::{SlotWorker, SlotInfo, SlotCompatible, slot_now, CheckedHeader, check_equivocation};
 
 
 /// A slot duration. Create with `get_or_compute`.
 // FIXME: Once Rust has higher-kinded types, the duplication between this
 // and `super::babe::Config` can be eliminated.
 // https://github.com/paritytech/substrate/issues/2434
-pub struct Config(slots::SlotDuration<BabeConfiguration>);
+pub struct Config(slots::Config<BabeConfiguration>);
 
 impl Config {
 	/// Either fetch the slot duration from disk or compute it from the genesis

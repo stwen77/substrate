@@ -51,7 +51,7 @@ use runtime_primitives::traits::{
 	Zero, Member,
 };
 
-use primitives::Pair;
+use primitives::crypto::Pair;
 use inherents::{InherentDataProviders, InherentData};
 use authorities::AuthoritiesApi;
 
@@ -77,21 +77,30 @@ type AuthorityId<P> = <P as Pair>::Public;
 
 /// A slot duration. Create with `get_or_compute`.
 #[derive(Clone, Copy, Debug, Encode, Decode, Hash, PartialOrd, Ord, PartialEq, Eq)]
-pub struct SlotDuration(slots::SlotDuration<u64>);
+pub struct Config(slots::Config<u64>);
 
-impl SlotDuration {
+impl Config {
 	/// Either fetch the slot duration from disk or compute it from the genesis
 	/// state.
 	pub fn get_or_compute<B: Block, C>(client: &C) -> CResult<Self>
 	where
 		C: AuxStore, C: ProvideRuntimeApi, C::Api: AuraApi<B>,
 	{
-		slots::SlotDuration::get_or_compute(client, |a, b| a.slot_duration(b)).map(Self)
+		slots::Config::get_or_compute(client, |a, b| a.slot_duration(b)).map(Self)
 	}
 
 	/// Get the slot duration in milliseconds.
 	pub fn get(&self) -> u64 {
 		self.0.get()
+	}
+
+	fn extract_timestamp_and_slot(
+		data: &InherentData
+	) -> Result<(TimestampInherent, AuraInherent), consensus_common::Error> {
+		data.timestamp_inherent_data()
+			.and_then(|t| data.aura_inherent_data().map(|a| (t, a)))
+			.map_err(Into::into)
+			.map_err(consensus_common::Error::InherentData)
 	}
 }
 
@@ -110,23 +119,9 @@ fn slot_author<P: Pair>(slot_num: u64, authorities: &[AuthorityId<P>]) -> Option
 	Some(current_author)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-struct AuraSlotCompatible;
-
-impl SlotCompatible for AuraSlotCompatible {
-	fn extract_timestamp_and_slot(
-		data: &InherentData
-	) -> Result<(TimestampInherent, AuraInherent), consensus_common::Error> {
-		data.timestamp_inherent_data()
-			.and_then(|t| data.aura_inherent_data().map(|a| (t, a)))
-			.map_err(Into::into)
-			.map_err(consensus_common::Error::InherentData)
-	}
-}
-
 /// Start the aura worker. The returned future should be run in a tokio runtime.
 pub fn start_aura<B, C, SC, E, I, P, SO, Error, OnExit, H>(
-	slot_duration: SlotDuration,
+	config: Config,
 	local_key: Arc<P>,
 	client: Arc<C>,
 	select_chain: SC,
@@ -168,7 +163,7 @@ pub fn start_aura<B, C, SC, E, I, P, SO, Error, OnExit, H>(
 		force_authoring,
 	};
 	slots::start_slot_worker::<_, _, _, _, _, AuraSlotCompatible, _>(
-		slot_duration.0,
+		config.0,
 		select_chain,
 		Arc::new(worker),
 		sync_oracle,

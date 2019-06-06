@@ -57,18 +57,29 @@ pub trait SlotWorker<B: Block> {
 	fn on_slot(&self, chain_head: B::Header, slot_info: SlotInfo) -> Self::OnSlot;
 }
 
-/// Slot compatible inherent data.
-pub trait SlotCompatible {
+/// Configuration Type for Block Extension Algorithms
+pub trait Config<T> {
+	/// Either fetch the slot duration from disk or compute it from the
+	/// genesis state.
+	///
+	/// `slot_key` is marked as `'static`, as it should really be a
+	/// compile-time constant.
+	pub fn get_or_compute<B: Block, C, CB>(client: &C, cb: CB) -> ::client::error::Result<Self>;
+
+	/// Returns slot data value.
+	pub fn get(&self) -> T;
+
 	/// Extract timestamp and slot from inherent data.
 	fn extract_timestamp_and_slot(
 		inherent: &InherentData,
 	) -> Result<(u64, u64), consensus_common::Error>;
 }
+// NTS: better error handling as well!
 
 /// Start a new slot worker in a separate thread.
 #[deprecated(since = "1.1", note = "Please spawn a thread manually")]
 pub fn start_slot_worker_thread<B, C, W, SO, SC, T, OnExit>(
-	slot_duration: SlotDuration<T>,
+	slot_duration: SlotConfig<T>,
 	select_chain: C,
 	worker: Arc<W>,
 	sync_oracle: SO,
@@ -80,7 +91,7 @@ where
 	C: SelectChain<B> + Clone + 'static,
 	W: SlotWorker<B> + Send + Sync + 'static,
 	SO: SyncOracle + Send + Clone + 'static,
-	SC: SlotCompatible + 'static,
+	SC: Config + 'static,
 	OnExit: Future<Item = (), Error = ()> + Send + 'static,
 	T: SlotData + Send + Clone + 'static,
 {
@@ -98,7 +109,7 @@ where
 		};
 
 		let slot_worker_future = match start_slot_worker::<_, _, _, T, _, SC, _>(
-			slot_duration.clone(),
+			slot_config.clone(),
 			select_chain,
 			worker,
 			sync_oracle,
@@ -129,7 +140,7 @@ where
 
 /// Start a new slot worker.
 pub fn start_slot_worker<B, C, W, T, SO, SC, OnExit>(
-	slot_duration: SlotDuration<T>,
+	slot_config: SlotConfig<T>,
 	client: C,
 	worker: Arc<W>,
 	sync_oracle: SO,
@@ -141,21 +152,21 @@ where
 	C: SelectChain<B> + Clone,
 	W: SlotWorker<B>,
 	SO: SyncOracle + Send + Clone,
-	SC: SlotCompatible,
+	SC: Config + 'static,
 	OnExit: Future<Item = (), Error = ()>,
 	T: SlotData + Clone,
 {
-	worker.on_start(slot_duration.slot_duration())?;
+	worker.on_start(slot_config.slot_duration())?;
 
 	let make_authorship = move || {
 		let client = client.clone();
 		let worker = worker.clone();
 		let sync_oracle = sync_oracle.clone();
-		let SlotDuration(slot_duration) = slot_duration.clone();
+		let SlotConfig(slot_config) = slot_config.clone();
 		let inherent_data_providers = inherent_data_providers.clone();
 
 		// rather than use a timer interval, we schedule our waits ourselves
-		Slots::<SC>::new(slot_duration.slot_duration(), inherent_data_providers)
+		Slots::<SC>::new(slot_config.slot_duration(), inherent_data_providers)
 			.map_err(|e| debug!(target: "slots", "Faulty timer: {:?}", e))
 			.for_each(move |slot_info| {
 				let client = client.clone();
@@ -235,19 +246,19 @@ impl SlotData for u64 {
 	const SLOT_KEY: &'static [u8] = b"aura_slot_duration";
 }
 
-/// A slot duration. Create with `get_or_compute`.
+/// A slot configuration. Create with `get_or_compute`.
 // The internal member should stay private here.
 #[derive(Clone, Copy, Debug, Encode, Decode, Hash, PartialOrd, Ord, PartialEq, Eq)]
-pub struct SlotDuration<T>(T);
+pub struct SlotConfig<T>(T);
 
-impl<T> Deref for SlotDuration<T> {
+impl<T> Deref for SlotConfig<T> {
 	type Target = T;
 	fn deref(&self) -> &T {
 		&self.0
 	}
 }
 
-impl<T: SlotData + Clone> SlotData for SlotDuration<T> {
+impl<T: SlotData + Clone> SlotData for SlotConfig<T> {
 	/// Get the slot duration in milliseconds.
 	fn slot_duration(&self) -> u64
 		where T: SlotData,
@@ -258,7 +269,7 @@ impl<T: SlotData + Clone> SlotData for SlotDuration<T> {
 	const SLOT_KEY: &'static [u8] = T::SLOT_KEY;
 }
 
-impl<T: Clone> SlotDuration<T> {
+impl<T: Clone> Config for SlotConfig<T> {
 	/// Either fetch the slot duration from disk or compute it from the
 	/// genesis state.
 	///
