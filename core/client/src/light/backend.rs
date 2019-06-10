@@ -23,7 +23,7 @@ use futures::{Future, IntoFuture};
 use parking_lot::{RwLock, Mutex};
 
 use runtime_primitives::{generic::BlockId, Justification, StorageOverlay, ChildrenStorageOverlay};
-use state_machine::{Backend as StateBackend, TrieBackend, backend::InMemory as InMemoryState};
+use state_machine::{Backend as StateBackend, TrieBackend, backend::InMemory as InMemoryState, ChangesTrieTransaction};
 use runtime_primitives::traits::{Block as BlockT, NumberFor, Zero, Header};
 use crate::in_mem::{self, check_genesis_storage};
 use crate::backend::{AuxStore, Backend as ClientBackend, BlockImportOperation, RemoteBackend, NewBlockState};
@@ -273,7 +273,7 @@ where
 		Ok(())
 	}
 
-	fn update_changes_trie(&mut self, _update: MemoryDB<H>) -> ClientResult<()> {
+	fn update_changes_trie(&mut self, _update: ChangesTrieTransaction<H, NumberFor<Block>>) -> ClientResult<()> {
 		// we're not storing anything locally => ignore changes
 		Ok(())
 	}
