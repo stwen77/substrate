@@ -22,7 +22,7 @@ use std::{str::FromStr, io::{stdin, Read}};
 use hex_literal::hex;
 use clap::load_yaml;
 use bip39::{Mnemonic, Language, MnemonicType};
-use substrate_primitives::{ed25519, sr25519, hexdisplay::HexDisplay, Pair, crypto::Ss58Codec, blake2_256};
+use substrate_primitives::{ed25519, sr25519, hexdisplay::HexDisplay, Pair, Public, crypto::Ss58Codec, blake2_256};
 use parity_codec::{Encode, Decode, Compact};
 use sr_primitives::generic::Era;
 use node_primitives::{Balance, Index, Hash};
@@ -32,7 +32,7 @@ mod vanity;
 
 trait Crypto {
 	type Pair: Pair<Public=Self::Public>;
-	type Public: Ss58Codec + AsRef<[u8]>;
+	type Public: Public + Ss58Codec + AsRef<[u8]> + std::hash::Hash;
 	fn pair_from_suri(suri: &str, password: Option<&str>) -> Self::Pair {
 		Self::Pair::from_string(suri, password).expect("Invalid phrase")
 	}
@@ -146,7 +146,8 @@ fn execute<C: Crypto>(matches: clap::ArgMatches) where
 			let genesis_hash: Hash = match matches.value_of("genesis").unwrap_or("alex") {
 				"elm" => hex!["10c08714a10c7da78f40a60f6f732cf0dba97acfb5e2035445b032386157d5c3"].into(),
 				"alex" => hex!["dcd1346701ca8396496e52aa2785b1748deb6db09551b72159dcb3e08991025b"].into(),
-				h => hex::decode(h).ok().and_then(|x| Decode::decode(&mut &x[..])).expect("Invalid genesis hash or unrecognised chain identifier"),
+				h => hex::decode(h).ok().and_then(|x| Decode::decode(&mut &x[..]))
+          .expect("Invalid genesis hash or unrecognised chain identifier"),
 			};
 
 			println!("Using a genesis hash of {}", HexDisplay::from(&genesis_hash.as_ref()));

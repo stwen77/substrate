@@ -77,17 +77,17 @@
 use rstd::prelude::*;
 use rstd::marker::PhantomData;
 use rstd::result;
-use primitives::traits::{
+use primitives::{generic::Digest, traits::{
 	self, Header, Zero, One, Checkable, Applyable, CheckEqual, OnFinalize,
-	OnInitialize, Digest, NumberFor, Block as BlockT, OffchainWorker,
-	ValidateUnsigned, DigestItem,
-};
-use primitives::weights::Weighable;
-use primitives::{ApplyOutcome, ApplyError};
-use primitives::transaction_validity::{TransactionValidity, TransactionPriority, TransactionLongevity};
+	OnInitialize, NumberFor, Block as BlockT, OffchainWorker,
+	ValidateUnsigned,
+}};
 use srml_support::{Dispatchable, traits::MakePayment};
 use parity_codec::{Codec, Encode};
-use system::extrinsics_root;
+use system::{extrinsics_root, DigestOf};
+use primitives::{ApplyOutcome, ApplyError};
+use primitives::transaction_validity::{TransactionValidity, TransactionPriority, TransactionLongevity};
+use primitives::weights::Weighable;
 
 mod internal {
 	pub const MAX_TRANSACTIONS_WEIGHT: u32 = 4 * 1024 * 1024;
@@ -112,6 +112,10 @@ pub trait ExecuteBlock<Block: BlockT> {
 	fn execute_block(block: Block);
 }
 
+pub type CheckedOf<E, C> = <E as Checkable<C>>::Checked;
+pub type CallOf<E, C> = <CheckedOf<E, C> as Applyable>::Call;
+pub type OriginOf<E, C> = <CallOf<E, C> as Dispatchable>::Origin;
+
 pub struct Executive<System, Block, Context, Payment, UnsignedValidator, AllModules>(
 	PhantomData<(System, Block, Context, Payment, UnsignedValidator, AllModules)>
 );
@@ -126,12 +130,10 @@ impl<
 > ExecuteBlock<Block> for Executive<System, Block, Context, Payment, UnsignedValidator, AllModules>
 where
 	Block::Extrinsic: Checkable<Context> + Codec,
-	<Block::Extrinsic as Checkable<Context>>::Checked:
-		Applyable<Index=System::Index, AccountId=System::AccountId> + Weighable,
-	<<Block::Extrinsic as Checkable<Context>>::Checked as Applyable>::Call: Dispatchable,
-	<<<Block::Extrinsic as Checkable<Context>>::Checked as Applyable>::Call as Dispatchable>::Origin:
-		From<Option<System::AccountId>>,
-	UnsignedValidator: ValidateUnsigned<Call=<<Block::Extrinsic as Checkable<Context>>::Checked as Applyable>::Call>
+	CheckedOf<Block::Extrinsic, Context>: Applyable<Index=System::Index, AccountId=System::AccountId> + Weighable,
+	CallOf<Block::Extrinsic, Context>: Dispatchable,
+	OriginOf<Block::Extrinsic, Context>: From<Option<System::AccountId>>,
+	UnsignedValidator: ValidateUnsigned<Call=CallOf<Block::Extrinsic, Context>>,
 {
 	fn execute_block(block: Block) {
 		Executive::<System, Block, Context, Payment, UnsignedValidator, AllModules>::execute_block(block);
@@ -148,16 +150,14 @@ impl<
 > Executive<System, Block, Context, Payment, UnsignedValidator, AllModules>
 where
 	Block::Extrinsic: Checkable<Context> + Codec,
-	<Block::Extrinsic as Checkable<Context>>::Checked:
-		Applyable<Index=System::Index, AccountId=System::AccountId> + Weighable,
-	<<Block::Extrinsic as Checkable<Context>>::Checked as Applyable>::Call: Dispatchable,
-	<<<Block::Extrinsic as Checkable<Context>>::Checked as Applyable>::Call as Dispatchable>::Origin:
-		From<Option<System::AccountId>>,
-	UnsignedValidator: ValidateUnsigned<Call=<<Block::Extrinsic as Checkable<Context>>::Checked as Applyable>::Call>
+	CheckedOf<Block::Extrinsic, Context>: Applyable<Index=System::Index, AccountId=System::AccountId> + Weighable,
+	CallOf<Block::Extrinsic, Context>: Dispatchable,
+	OriginOf<Block::Extrinsic, Context>: From<Option<System::AccountId>>,
+	UnsignedValidator: ValidateUnsigned<Call=CallOf<Block::Extrinsic, Context>>,
 {
 	/// Start the execution of a particular block.
 	pub fn initialize_block(header: &System::Header) {
-		let mut digests = System::Digest::default();
+		let mut digests = <DigestOf<System>>::default();
 		header.digest().logs().iter().for_each(|d| if d.as_pre_runtime().is_some() { digests.push(d.clone()) });
 		Self::initialize_block_impl(header.number(), header.parent_hash(), header.extrinsics_root(), &digests);
 	}
@@ -166,7 +166,7 @@ where
 		block_number: &System::BlockNumber,
 		parent_hash: &System::Hash,
 		extrinsics_root: &System::Hash,
-		digest: &System::Digest
+		digest: &Digest<System::Hash>,
 	) {
 		<system::Module<System>>::initialize(block_number, parent_hash, extrinsics_root, digest);
 		<AllModules as OnInitialize<System::BlockNumber>>::on_initialize(*block_number);
@@ -259,7 +259,7 @@ where
 	fn apply_extrinsic_with_len(
 		uxt: Block::Extrinsic,
 		encoded_len: usize,
-		to_note: Option<Vec<u8>>
+		to_note: Option<Vec<u8>>,
 	) -> result::Result<internal::ApplyOutcome, internal::ApplyError> {
 		// Verify that the signature is good.
 		let xt = uxt.check(&Default::default()).map_err(internal::ApplyError::BadSignature)?;
@@ -395,10 +395,10 @@ mod tests {
 	use balances::Call;
 	use runtime_io::with_externalities;
 	use substrate_primitives::{H256, Blake2Hasher};
-	use primitives::BuildStorage;
 	use primitives::traits::{Header as HeaderT, BlakeTwo256, IdentityLookup};
-	use primitives::testing::{Digest, DigestItem, Header, Block};
-	use srml_support::{traits::Currency, impl_outer_origin, impl_outer_event};
+	use primitives::testing::{Digest, Header, Block};
+	use srml_support::{impl_outer_event, impl_outer_origin, parameter_types};
+	use srml_support::traits::Currency;
 	use system;
 	use hex_literal::hex;
 
@@ -422,12 +422,17 @@ mod tests {
 		type BlockNumber = u64;
 		type Hash = substrate_primitives::H256;
 		type Hashing = BlakeTwo256;
-		type Digest = Digest;
 		type AccountId = u64;
 		type Lookup = IdentityLookup<u64>;
 		type Header = Header;
 		type Event = MetaEvent;
-		type Log = DigestItem;
+	}
+	parameter_types! {
+		pub const ExistentialDeposit: u64 = 0;
+		pub const TransferFee: u64 = 0;
+		pub const CreationFee: u64 = 0;
+		pub const TransactionBaseFee: u64 = 0;
+		pub const TransactionByteFee: u64 = 0;
 	}
 	impl balances::Trait for Runtime {
 		type Balance = u64;
@@ -437,6 +442,11 @@ mod tests {
 		type TransactionPayment = ();
 		type DustRemoval = ();
 		type TransferPayment = ();
+		type ExistentialDeposit = ExistentialDeposit;
+		type TransferFee = TransferFee;
+		type CreationFee = CreationFee;
+		type TransactionBaseFee = TransactionBaseFee;
+		type TransactionByteFee = TransactionByteFee;
 	}
 
 	impl ValidateUnsigned for Runtime {
@@ -457,33 +467,40 @@ mod tests {
 	}
 
 	type TestXt = primitives::testing::TestXt<Call<Runtime>>;
-	type Executive = super::Executive<Runtime, Block<TestXt>, system::ChainContext<Runtime>, balances::Module<Runtime>, Runtime, ()>;
+	type Executive = super::Executive<
+		Runtime,
+		Block<TestXt>,
+		system::ChainContext<Runtime>,
+		balances::Module<Runtime>,
+		Runtime,
+		()
+	>;
 
 	#[test]
 	fn balance_transfer_dispatch_works() {
-		let mut t = system::GenesisConfig::<Runtime>::default().build_storage().unwrap().0;
+		let mut t = system::GenesisConfig::default().build_storage::<Runtime>().unwrap().0;
 		t.extend(balances::GenesisConfig::<Runtime> {
-			transaction_base_fee: 10,
-			transaction_byte_fee: 0,
 			balances: vec![(1, 111)],
-			existential_deposit: 0,
-			transfer_fee: 0,
-			creation_fee: 0,
 			vesting: vec![],
 		}.build_storage().unwrap().0);
 		let xt = primitives::testing::TestXt(Some(1), 0, Call::transfer(2, 69));
 		let mut t = runtime_io::TestExternalities::<Blake2Hasher>::new(t);
 		with_externalities(&mut t, || {
-			Executive::initialize_block(&Header::new(1, H256::default(), H256::default(),
-				[69u8; 32].into(), Digest::default()));
+			Executive::initialize_block(&Header::new(
+				1,
+				H256::default(),
+				H256::default(),
+				[69u8; 32].into(),
+				Digest::default(),
+			));
 			Executive::apply_extrinsic(xt).unwrap();
-			assert_eq!(<balances::Module<Runtime>>::total_balance(&1), 32);
+			assert_eq!(<balances::Module<Runtime>>::total_balance(&1), 42);
 			assert_eq!(<balances::Module<Runtime>>::total_balance(&2), 69);
 		});
 	}
 
 	fn new_test_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
-		let mut t = system::GenesisConfig::<Runtime>::default().build_storage().unwrap().0;
+		let mut t = system::GenesisConfig::default().build_storage::<Runtime>().unwrap().0;
 		t.extend(balances::GenesisConfig::<Runtime>::default().build_storage().unwrap().0);
 		t.into()
 	}
@@ -495,7 +512,7 @@ mod tests {
 				header: Header {
 					parent_hash: [69u8; 32].into(),
 					number: 1,
-					state_root: hex!("5ba497e45e379d80a4524f9509d224e9c175d0fa30f3491481e7e44a6a758adf").into(),
+					state_root: hex!("d75c79776d69123b65e819977b70e102482e05fd7538c1dcae1249a248ba64e4").into(),
 					extrinsics_root: hex!("03170a2e7597b7b7e3d84c05391d139a62b157e78786d8c082f29dcf4c111314").into(),
 					digest: Digest { logs: vec![], },
 				},
@@ -543,7 +560,13 @@ mod tests {
 		let mut t = new_test_ext();
 		let xt = primitives::testing::TestXt(Some(1), 42, Call::transfer(33, 69));
 		with_externalities(&mut t, || {
-			Executive::initialize_block(&Header::new(1, H256::default(), H256::default(), [69u8; 32].into(), Digest::default()));
+			Executive::initialize_block(&Header::new(
+				1,
+				H256::default(),
+				H256::default(),
+				[69u8; 32].into(),
+				Digest::default(),
+			));
 			assert!(Executive::apply_extrinsic(xt).is_err());
 			assert_eq!(<system::Module<Runtime>>::extrinsic_index(), Some(0));
 		});
@@ -558,7 +581,13 @@ mod tests {
 			let encoded = xt2.encode();
 			let len = if should_fail { (internal::MAX_TRANSACTIONS_WEIGHT - 1) as usize } else { encoded.len() };
 			with_externalities(&mut t, || {
-				Executive::initialize_block(&Header::new(1, H256::default(), H256::default(), [69u8; 32].into(), Digest::default()));
+				Executive::initialize_block(&Header::new(
+					1,
+					H256::default(),
+					H256::default(),
+					[69u8; 32].into(),
+					Digest::default(),
+				));
 				assert_eq!(<system::Module<Runtime>>::all_extrinsics_weight(), 0);
 
 				Executive::apply_extrinsic(xt).unwrap();
